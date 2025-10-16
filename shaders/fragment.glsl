@@ -20,7 +20,7 @@ vec4 getNode(float index) {
     float y = floor(index / 2.0);
     float x = mod(index, 2.0);
     // Add 0.5 to sample the center of the texel
-    return texture2D(u_octreeTexture, vec2((x + 0.5) / 2.0, (y + 0.5) / u_textureSize));
+    return texture2D(u_octreeTexture, vec2(x / 2.0 + 0.25, y / u_textureSize + 0.5 / u_textureSize));
 }
 
 // --- CORE OCTREE TRAVERSAL ---
@@ -71,7 +71,15 @@ vec2 traceOctree(vec3 ro, vec3 rd) {
         if (p.y >= mid.y) current_child_idx |= 2;
         if (p.z >= mid.z) current_child_idx |= 4;
 
-        float nextNodeIndex = (current_child_idx < 4) ? children1[current_child_idx] : children2[current_child_idx - 4];
+        float nextNodeIndex = 0.0;
+        if (current_child_idx == 0) nextNodeIndex = children1.x;
+        else if (current_child_idx == 1) nextNodeIndex = children1.y;
+        else if (current_child_idx == 2) nextNodeIndex = children1.z;
+        else if (current_child_idx == 3) nextNodeIndex = children1.w;
+        else if (current_child_idx == 4) nextNodeIndex = children2.x;
+        else if (current_child_idx == 5) nextNodeIndex = children2.y;
+        else if (current_child_idx == 6) nextNodeIndex = children2.z;
+        else if (current_child_idx == 7) nextNodeIndex = children2.w;
 
         if (nextNodeIndex == 0.0) {
            return vec2(MAX_DIST, 0.0); // Should not happen
@@ -157,8 +165,15 @@ void main() {
             vec2 shadow_hit = traceOctree(p + normal * HIT_EPSILON, lightDir);
             float shadow_factor = (shadow_hit.x < MAX_DIST) ? 0.5 : 1.0;
 
+            // --- Ambient Occlusion Calculation ---
+            float ao_factor = 1.0 - (
+                  traceOctree(p + normal * 0.2, normal).x < 0.2 ? 0.1 : 0.0
+                + traceOctree(p + normal * 0.4, normal).x < 0.4 ? 0.1 : 0.0
+                + traceOctree(p + normal * 0.8, normal).x < 0.8 ? 0.1 : 0.0
+            );
+
             vec3 voxelColor = getVoxelColor(voxel_type);
-            col += (1.0 - alpha) * voxelColor * diffuse * shadow_factor;
+            col += (1.0 - alpha) * voxelColor * diffuse * shadow_factor * ao_factor;
             alpha = 1.0; // Fully opaque
             break;
         }
