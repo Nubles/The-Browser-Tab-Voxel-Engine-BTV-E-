@@ -7,24 +7,72 @@
     <style>
         body { margin: 0; overflow: hidden; }
         canvas { display: block; }
-        #ui { position: absolute; top: 10px; left: 10px; color: white; background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; font-family: sans-serif; }
         button { margin-top: 10px; }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background-color: white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            mix-blend-mode: difference; /* Makes it visible on any color */
+        }
+        #hotbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .slot {
+            width: 50px;
+            height: 50px;
+            border: 2px solid #555;
+            margin: 0 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 18px;
+            font-family: sans-serif;
+            position: relative;
+        }
+        .slot.active {
+            border-color: white;
+            background-color: rgba(255,255,255,0.2);
+        }
+        .slot .label {
+            position: absolute;
+            bottom: -20px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
+    <div id="crosshair"></div>
     <canvas id="gl-canvas"></canvas>
     <div id="ui">
-        <h3>Voxel Editor</h3>
-        <div>
-            <label for="voxel-type">Block Type:</label>
-            <select id="voxel-type">
-                <option value="1" selected>Dirt</option>
-                <option value="2">Stone</option>
-                <option value="3">Water</option>
-            </select>
-        </div>
-        <button id="save-button">Save World</button>
+        <button id="save-button">Save to Browser</button>
+        <button id="export-button">Export to File</button>
+        <button id="import-button">Import from File</button>
+        <input type="file" id="import-file" style="display: none;" accept=".json">
     </div>
+    <div id="hotbar">
+        <div class="slot active" data-block-id="1">1<span class="label">Dirt</span></div>
+        <div class="slot" data-block-id="2">2<span class="label">Stone</span></div>
+        <div class="slot" data-block-id="3">3<span class="label">Water</span></div>
+        <div class="slot" data-block-id="4">4<span class="label">Wood</span></div>
+        <div class="slot" data-block-id="5">5<span class="label">Leaves</span></div>
+        <div class="slot" data-block-id="6">6<span class="label">Glass</span></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

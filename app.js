@@ -40,7 +40,27 @@ class Octree {
         }
     }
     find(point) { /* ... implementation ... */ }
-    remove(point) { this.insert(point, null); }
+    remove(point) {
+        this.insert(point, null);
+        this.prune(this.root);
+    }
+
+    prune(node) {
+        if (node.isLeaf) return;
+
+        let allChildrenAreEmptyLeaves = true;
+        for (const child of node.children) {
+            this.prune(child);
+            if (!child.isLeaf || child.data !== null) {
+                allChildrenAreEmptyLeaves = false;
+            }
+        }
+
+        if (allChildrenAreEmptyLeaves) {
+            node.isLeaf = true;
+            node.children = [];
+        }
+    }
 
     // Flatten the Octree into a texture-friendly format (Float32Array)
     flattenToTexture(maxNodes) {
@@ -230,14 +250,27 @@ async function main() {
         console.log("Loaded world from IndexedDB.");
     } else {
         octree = new Octree(worldSize, maxDepth);
-        // Create a ground plane for new worlds
+        const simplex = new SimplexNoise();
+        const stoneLayerDepth = 3;
+
         for (let x = 0; x < worldSize; x++) {
             for (let z = 0; z < worldSize; z++) {
-                octree.insert([x + 0.5, 0.5, z + 0.5], 1); // Dirt
+                // Use simplex noise to get a height value between ~ -1 and 1
+                const noiseVal = simplex.noise2D(x / worldSize * 5, z / worldSize * 5);
+                // Map noise value to a height in the world (e.g., from 4 to 12)
+                const height = Math.floor((noiseVal + 1) / 2 * 8) + 4;
+
+                // Create the ground
+                for (let y = 0; y < height; y++) {
+                    let blockType = 1; // Default to Dirt
+                    if (y < height - stoneLayerDepth) {
+                        blockType = 2; // Stone
+                    }
+                    octree.insert([x + 0.5, y + 0.5, z + 0.5], blockType);
+                }
             }
         }
-        octree.insert([8.5, 1.5, 8.5], 2); // Stone block
-        console.log("Created a new default world.");
+        console.log("Created a new procedurally generated world.");
     }
 
     const vsSource = await fetch('shaders/vertex.glsl').then(res => res.text());
@@ -281,6 +314,24 @@ async function main() {
     let cameraRight = [1, 0, 0];
     let cameraUp = [0, 1, 0];
 
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+        keys[e.code] = true;
+
+        // Handle hotbar switching
+        if (e.code.startsWith('Digit')) {
+            const digit = parseInt(e.code.slice(5), 10);
+            if (digit >= 1 && digit <= 9) {
+                const newSlot = document.querySelector(`#hotbar .slot[data-block-id='${digit}']`);
+                if (newSlot) {
+                    document.querySelector('#hotbar .slot.active').classList.remove('active');
+                    newSlot.classList.add('active');
+                }
+            }
+        }
+    });
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
+
 
     function updateOctreeTexture() {
         octreeTextureData = octree.flattenToTexture(maxNodes);
@@ -290,21 +341,8 @@ async function main() {
     canvas.addEventListener('click', (e) => {
         if (e.target.id !== 'gl-canvas') return;
 
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        const aspect = canvas.width / canvas.height;
-        const uvx = (x / canvas.width * 2 - 1) * aspect;
-        const uvy = y / canvas.height * -2 + 1;
-
-        const fov = 1.5; // Matches shader
-        const rd = normalize([
-            uvx * cameraRight[0] + uvy * cameraUp[0] + fov * cameraForward[0],
-            uvx * cameraRight[1] + uvy * cameraUp[1] + fov * cameraForward[1],
-            uvx * cameraRight[2] + uvy * cameraUp[2] + fov * cameraForward[2]
-        ]);
-
+        // Raycast from the center of the screen (crosshair)
+        const rd = cameraForward;
         const hit = octree.raycast(cameraPos, rd);
 
         if (hit) {
@@ -314,7 +352,7 @@ async function main() {
                     hit.position[1] + hit.normal[1] + 0.5,
                     hit.position[2] + hit.normal[2] + 0.5,
                 ];
-                const voxelType = parseInt(document.getElementById('voxel-type').value, 10);
+                const voxelType = parseInt(document.querySelector('#hotbar .slot.active').dataset.blockId, 10);
                 octree.insert(newVoxelPos, voxelType);
             } else if (e.button === 2) { // Right-click: Dig
                 const voxelToRemove = [hit.position[0] + 0.5, hit.position[1] + 0.5, hit.position[2] + 0.5];
@@ -328,14 +366,51 @@ async function main() {
         try {
             const serializedData = octree.serialize();
             await dbManager.save(serializedData);
-            alert('World saved!');
+            alert('World saved to browser!');
         } catch (error) {
             console.error('Failed to save world:', error);
             alert('Error saving world. Check console for details.');
         }
     });
 
+    document.getElementById('export-button').addEventListener('click', () => {
+        const serializedData = octree.serialize();
+        const blob = new Blob([serializedData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'voxel-world.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    const importFileInput = document.getElementById('import-file');
+    document.getElementById('import-button').addEventListener('click', () => {
+        importFileInput.click();
+    });
+
+    importFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                octree = Octree.deserialize(event.target.result, worldSize, maxDepth);
+                updateOctreeTexture();
+                alert('World imported successfully!');
+            } catch (error) {
+                console.error('Failed to import world:', error);
+                alert('Error importing world. The file might be corrupted or in the wrong format.');
+            }
+        };
+        reader.readAsText(file);
+    });
+
+
     canvas.addEventListener('mousedown', (e) => {
+        // Lock pointer on canvas click
+        canvas.requestPointerLock();
         isDragging = true;
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
@@ -345,24 +420,45 @@ async function main() {
         setTimeout(()=> isDragging = false, 50); // Delay to differentiate click from drag
     });
     canvas.addEventListener('mousemove', (e) => {
-        if (!isDragging || e.buttons === 0) {
-             isDragging = false;
-             return;
+        if (document.pointerLockElement === canvas) {
+            cameraYaw -= e.movementX * 0.002;
+            cameraPitch -= e.movementY * 0.002;
+            cameraPitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraPitch));
         }
-        const dx = e.clientX - lastMouseX;
-        const dy = e.clientY - lastMouseY;
-        cameraYaw -= dx * 0.005;
-        cameraPitch -= dy * 0.005;
-        cameraPitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraPitch)); // Clamp pitch
-        lastMouseX = e.clientX;
-        lastMouseY = e.clientY;
     });
 
-    function render() {
+    let lastTime = 0;
+    function render(time) {
+        time *= 0.001; // convert to seconds
+        const deltaTime = time - lastTime;
+        lastTime = time;
+
         resizeCanvasToDisplaySize(gl.canvas);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // --- Handle Player Movement ---
+        const moveSpeed = 5.0 * deltaTime;
+        if (keys['KeyW']) {
+            cameraPos[0] += cameraForward[0] * moveSpeed;
+            cameraPos[1] += cameraForward[1] * moveSpeed;
+            cameraPos[2] += cameraForward[2] * moveSpeed;
+        }
+        if (keys['KeyS']) {
+            cameraPos[0] -= cameraForward[0] * moveSpeed;
+            cameraPos[1] -= cameraForward[1] * moveSpeed;
+            cameraPos[2] -= cameraForward[2] * moveSpeed;
+        }
+        if (keys['KeyA']) {
+            cameraPos[0] -= cameraRight[0] * moveSpeed;
+            cameraPos[2] -= cameraRight[2] * moveSpeed; // Note: No vertical strafe
+        }
+        if (keys['KeyD']) {
+            cameraPos[0] += cameraRight[0] * moveSpeed;
+            cameraPos[2] += cameraRight[2] * moveSpeed;
+        }
+
 
         // Calculate camera vectors
         const cy = Math.cos(cameraYaw);
