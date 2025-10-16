@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser-Tab Voxel Engine</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+        button { margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <canvas id="gl-canvas"></canvas>
+    <div id="ui">
+        <h3>Voxel Editor</h3>
+        <div>
+            <label for="voxel-type">Block Type:</label>
+            <select id="voxel-type">
+                <option value="1" selected>Dirt</option>
+                <option value="2">Stone</option>
+                <option value="3">Water</option>
+            </select>
+        </div>
+        <button id="save-button">Save World</button>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
