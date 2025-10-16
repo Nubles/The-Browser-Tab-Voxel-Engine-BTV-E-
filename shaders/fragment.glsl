@@ -127,58 +127,51 @@ void main() {
 
     vec3 col = vec3(0.0);
     float alpha = 0.0;
-    const int MAX_TRANSPARENCY_BOUNCES = 4;
 
-    vec3 current_ro = ro;
-    vec3 current_rd = rd;
+    // --- Ray Marching ---
+    vec2 hit1 = traceOctree(ro, rd);
+    if (hit1.x >= MAX_DIST) {
+        // Hit sky on first bounce
+        float t = 0.5 + 0.5 * rd.y;
+        col = (1.0 - t) * vec3(1.0) + t * vec3(0.5, 0.7, 1.0);
+    } else {
+        vec3 p1 = ro + rd * hit1.x;
+        vec3 n1 = calcNormal(p1);
+        float v_type1 = hit1.y;
+        bool is_trans1 = v_type1 > 2.5 && v_type1 < 3.5 || v_type1 > 5.5 && v_type1 < 6.5;
 
-    for (int i = 0; i < MAX_TRANSPARENCY_BOUNCES; i++) {
-        vec2 hit = traceOctree(current_ro, current_rd);
-        float hit_t = hit.x;
-        float voxel_type = hit.y;
-
-        if (hit_t >= MAX_DIST) {
-            // Hit sky
-            float t = 0.5 + 0.5 * current_rd.y;
-            vec3 skyColor = (1.0 - t) * vec3(1.0) + t * vec3(0.5, 0.7, 1.0);
-            col += (1.0 - alpha) * skyColor;
-            break;
-        }
-
-        vec3 p = current_ro + current_rd * hit_t;
-        vec3 normal = calcNormal(p);
-
-        bool is_transparent = voxel_type > 2.5 && voxel_type < 3.5 || voxel_type > 5.5 && voxel_type < 6.5;
-
-        if (is_transparent) {
-            vec3 voxelColor = getVoxelColor(voxel_type);
-            float transparency = (voxel_type > 5.5) ? 0.2 : 0.4; // Glass is less transparent than water
-            col += (1.0 - alpha) * transparency * voxelColor;
-            alpha += (1.0 - alpha) * transparency;
-
-            // Continue ray marching
-            current_ro = p + current_rd * HIT_EPSILON;
-        } else {
-            // Opaque object, finish rendering
+        if (!is_trans1) {
+            // Opaque hit
             vec3 lightDir = normalize(vec3(0.5, 1.0, -0.5));
-            float diffuse = max(0.0, dot(normal, lightDir)) * 0.7 + 0.3;
-            vec2 shadow_hit = traceOctree(p + normal * HIT_EPSILON, lightDir);
-            float shadow_factor = (shadow_hit.x < MAX_DIST) ? 0.5 : 1.0;
+            float diffuse = max(0.0, dot(n1, lightDir)) * 0.7 + 0.3;
+            vec2 shadow_hit = traceOctree(p1 + n1 * HIT_EPSILON, lightDir);
+            float shadow = shadow_hit.x < MAX_DIST ? 0.5 : 1.0;
+            col = getVoxelColor(v_type1) * diffuse * shadow;
+        } else {
+            // Transparent hit, march again
+            vec3 trans_col = getVoxelColor(v_type1);
+            float trans_alpha = (v_type1 > 5.5) ? 0.2 : 0.4;
+            col += trans_col * trans_alpha;
+            alpha += trans_alpha;
 
-            // --- Ambient Occlusion Calculation ---
-            float ao_factor = 1.0 - (
-                  traceOctree(p + normal * 0.2, normal).x < 0.2 ? 0.1 : 0.0
-                + traceOctree(p + normal * 0.4, normal).x < 0.4 ? 0.1 : 0.0
-                + traceOctree(p + normal * 0.8, normal).x < 0.8 ? 0.1 : 0.0
-            );
+            vec3 ro2 = p1 + rd * HIT_EPSILON;
+            vec2 hit2 = traceOctree(ro2, rd);
 
-            vec3 voxelColor = getVoxelColor(voxel_type);
-            col += (1.0 - alpha) * voxelColor * diffuse * shadow_factor * ao_factor;
-            alpha = 1.0; // Fully opaque
-            break;
+            if (hit2.x >= MAX_DIST) {
+                float t = 0.5 + 0.5 * rd.y;
+                vec3 skyColor = (1.0 - t) * vec3(1.0) + t * vec3(0.5, 0.7, 1.0);
+                col += (1.0 - alpha) * skyColor;
+            } else {
+                vec3 p2 = ro2 + rd * hit2.x;
+                vec3 n2 = calcNormal(p2);
+                float v_type2 = hit2.y;
+                vec3 lightDir = normalize(vec3(0.5, 1.0, -0.5));
+                float diffuse = max(0.0, dot(n2, lightDir)) * 0.7 + 0.3;
+                vec2 shadow_hit = traceOctree(p2 + n2 * HIT_EPSILON, lightDir);
+                float shadow = shadow_hit.x < MAX_DIST ? 0.5 : 1.0;
+                col += (1.0 - alpha) * getVoxelColor(v_type2) * diffuse * shadow;
+            }
         }
-
-        if (alpha > 0.99) break;
     }
 
     gl_FragColor = vec4(col, 1.0);
